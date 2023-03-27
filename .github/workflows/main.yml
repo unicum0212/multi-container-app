@@ -1,4 +1,9 @@
 name: deploy-multi-container-app
+env:
+  EB_APP_NAME: "multi-docker"
+  EB_ENV_NAME: "docker-prod"
+  AWS_REGION_NAME: "eu-central-1"
+  EB_PACKAGE_S3_BUCKET_NAME: "elasticbeanstalk-eu-central-1-648494430292"
 
 on:
   push:
@@ -15,7 +20,7 @@ jobs:
       - run: docker build -t flawwwless/react-test -f ./client/Dockerfile.dev ./client
       - run: docker run -e CI=true flawwwless/react-test npm test
       
-  build_prod:
+  build_and_push_images:
     runs-on: ubuntu-latest
     needs: [tests]
     steps:
@@ -34,3 +39,25 @@ jobs:
       - run: docker push flawwwless/multi-nginx
       - run: docker push flawwwless/multi-server
       - run: docker push flawwwless/multi-worker
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: [build_and_push_images]
+    steps:
+      - name: Git clone repo
+        uses: actions/checkout@v2
+
+      - name: Generate deployment package
+        run: zip deploy.zip docker-compose.yml
+
+      - name: Deploy to EB  
+        uses: einaregilsson/beanstalk-deploy@v18
+        with: 
+          aws_access_key      : ${{ secrets.AWS_ACCESS_KEY }}
+          aws_secret_key      : ${{ secrets.AWS_SECRET_KEY }}
+          application_name    : ${{ env.EB_APP_NAME }}
+          environment_name    : ${{ env.EB_ENV_NAME }}
+          existing_bucket_name: ${{ env.EB_PACKAGE_S3_BUCKET_NAME }}
+          region              : ${{ env.AWS_REGION_NAME }}
+          version_label       : ${{ github.sha }}
+          deployment_package  : deploy.zip
